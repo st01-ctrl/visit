@@ -40,13 +40,15 @@ const INITIAL_DEMO_RECORDS: LedgerRecord[] = [
   { id: '3', date: '2026-10-01 16:20', author: '첫째', item: '문제집 및 학용품', amount: 18000 }
 ];
 
+const USER_PROVIDED_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxw6Kb3rofEV0wJbZsDloreNDxAgEguAuQYv6sSdoM4eFJZNht2L6X5j-zb4gJ7TWhYqQ/exec';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'architecture' | 'guide'>('simulator');
   const [codeSubTab, setCodeSubTab] = useState<'codegs' | 'indexhtml'>('codegs');
   
   // Real Google Sheets Web App Connection
   const [webAppUrl, setWebAppUrl] = useState(() => {
-    return localStorage.getItem('family_ledger_gas_url') || '';
+    return localStorage.getItem('family_ledger_gas_url') || import.meta.env.VITE_GOOGLE_SHEETS_URL || USER_PROVIDED_SHEETS_URL;
   });
   const [isUrlEditing, setIsUrlEditing] = useState(false);
   const [tempUrl, setTempUrl] = useState(webAppUrl);
