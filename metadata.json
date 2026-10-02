@@ -1,6 +1,6 @@
 {
-  "name": "따뜻한 하루 일기 - AI 감정 비서",
-  "description": "오늘의 감정과 하루를 기록하면 Gemini AI 비서가 따뜻한 위로와 내일을 위한 긍정 행동을 선물합니다.",
+  "name": "초간단 모바일 가족 가계부 (Google Apps Script)",
+  "description": "구글 스프레드시트와 직접 연동되는 초간단 모바일 가족 가계부 웹 앱 코드 생성기 및 라이브 프리뷰",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
