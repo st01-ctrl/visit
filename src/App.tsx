@@ -190,17 +190,34 @@ export default function App() {
     // 1. If Real Google Apps Script Web App URL is connected
     if (webAppUrl && connectionStatus !== 'error') {
       try {
-        const response = await fetch('/api/sheets/append', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webAppUrl,
-            payload
-          })
-        });
+        let saveSuccess = false;
+        // Try proxy first
+        try {
+          const response = await fetch('/api/sheets/append', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              webAppUrl,
+              payload
+            })
+          });
 
-        const resData = await response.json();
-        if (resData.success) {
+          const resData = await response.json();
+          if (resData.success) {
+            saveSuccess = true;
+          }
+        } catch {
+          // Fallback to direct client-side POST (no-cors) for static hosts like Vercel/GitHub Pages
+          await fetch(webAppUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+          });
+          saveSuccess = true;
+        }
+
+        if (saveSuccess) {
           const newRecord: LedgerRecord = {
             id: Date.now().toString(),
             date: formattedDate,
@@ -216,7 +233,7 @@ export default function App() {
           setShowToast(true);
         } else {
           setToastType('error');
-          setToastMessage('시트 저장 실패: ' + (resData.error || '오류 발생'));
+          setToastMessage('시트 저장 요청 실패');
           setShowToast(true);
         }
       } catch (err: any) {
