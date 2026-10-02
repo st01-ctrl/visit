@@ -1,0 +1,6 @@
+{
+  "name": "따뜻한 하루 일기 - AI 감정 비서",
+  "description": "오늘의 감정과 하루를 기록하면 Gemini AI 비서가 따뜻한 위로와 내일을 위한 긍정 행동을 선물합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
