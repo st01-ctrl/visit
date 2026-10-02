@@ -120,54 +120,71 @@ ${diaryDetailsText}
 5. 마음에 힘이 되는 한 줄 비타민 문구, 오늘 밤이나 내일 어울리는 따뜻한 차 종류, 감성적인 해시태그를 포함해주세요.
 `.trim();
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: '당신은 언제나 사용자의 편에서 온 마음으로 위로와 긍정 에너지를 건네는 다정한 AI 감정 비서입니다. 답변은 따뜻하고 품격 있는 문체로 작성하세요.',
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            comfortingMessage: {
-              type: Type.STRING,
-              description: '사용자의 감정을 어루만지고 다정하게 위로해주는 따뜻한 편지글 (존댓말, 2~4문단).',
-            },
-            tomorrowAction: {
-              type: Type.STRING,
-              description: '내일을 위한 긍정적이고 실천하기 쉬운 작은 행동 1가지.',
-            },
-            vitaminQuote: {
-              type: Type.STRING,
-              description: '마음의 비타민이 되는 짧고 인상적인 한 줄 응원 문장.',
-            },
-            emotionAnalysis: {
-              type: Type.STRING,
-              description: '오늘 사용자의 마음에 대한 한 줄의 따뜻한 공감 요약.',
-            },
-            recommendedTea: {
-              type: Type.STRING,
-              description: '마음을 편안하게 해주는 추천 차나 음료 (예: 캐모마일 티, 따뜻한 꿀배차).',
-            },
-            keywordTag: {
-              type: Type.STRING,
-              description: '따뜻한 응원 해시태그 (예: #수고했어_오늘도).',
+    // 503 과부하 대비 모델 자동 대체 체인
+    const candidateModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    let lastError: any = null;
+    let cheerData: any = null;
+
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            systemInstruction: '당신은 언제나 사용자의 편에서 온 마음으로 위로와 긍정 에너지를 건네는 다정한 AI 감정 비서입니다. 답변은 따뜻하고 품격 있는 문체로 작성하세요.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                comfortingMessage: {
+                  type: Type.STRING,
+                  description: '사용자의 감정을 어루만지고 다정하게 위로해주는 따뜻한 편지글 (존댓말, 2~4문단).',
+                },
+                tomorrowAction: {
+                  type: Type.STRING,
+                  description: '내일을 위한 긍정적이고 실천하기 쉬운 작은 행동 1가지.',
+                },
+                vitaminQuote: {
+                  type: Type.STRING,
+                  description: '마음의 비타민이 되는 짧고 인상적인 한 줄 응원 문장.',
+                },
+                emotionAnalysis: {
+                  type: Type.STRING,
+                  description: '오늘 사용자의 마음에 대한 한 줄의 따뜻한 공감 요약.',
+                },
+                recommendedTea: {
+                  type: Type.STRING,
+                  description: '마음을 편안하게 해주는 추천 차나 음료 (예: 캐모마일 티, 따뜻한 꿀배차).',
+                },
+                keywordTag: {
+                  type: Type.STRING,
+                  description: '따뜻한 응원 해시태그 (예: #수고했어_오늘도).',
+                },
+              },
+              required: [
+                'comfortingMessage',
+                'tomorrowAction',
+                'vitaminQuote',
+                'emotionAnalysis',
+                'recommendedTea',
+                'keywordTag',
+              ],
             },
           },
-          required: [
-            'comfortingMessage',
-            'tomorrowAction',
-            'vitaminQuote',
-            'emotionAnalysis',
-            'recommendedTea',
-            'keywordTag',
-          ],
-        },
-      },
-    });
+        });
 
-    const responseText = response.text?.trim() || '{}';
-    const cheerData = JSON.parse(responseText);
+        const responseText = response.text?.trim() || '{}';
+        cheerData = JSON.parse(responseText);
+        break; // 성공 시 루프 탈출
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Gemini Vercel] Model ${model} failed, trying next candidate...`, err?.message || err);
+      }
+    }
+
+    if (!cheerData) {
+      throw lastError || new Error('모든 AI 모델 연결에 실패했습니다.');
+    }
 
     return res.status(200).json({
       ok: true,
@@ -175,9 +192,21 @@ ${diaryDetailsText}
     });
   } catch (error: any) {
     console.error('Vercel Gemini API Error:', error);
+    
+    // 에러 메시지 사용자 친화적 가공
+    let friendlyMessage = 'AI 비서와의 연결 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+    const rawMsg = error?.message || '';
+    if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('UNAVAILABLE')) {
+      friendlyMessage = '현재 구글 AI 서버에 일시적인 접속량이 많습니다. 2~3초 후 [AI 비서에게 일기 보여주기] 버튼을 한 번 더 눌러주세요.';
+    } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+      friendlyMessage = 'API 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.';
+    } else if (rawMsg.includes('API key') || rawMsg.includes('API_KEY')) {
+      friendlyMessage = 'API 키가 올바르지 않거나 권한이 없습니다. Vercel 환경 변수를 확인해주세요.';
+    }
+
     return res.status(500).json({
       ok: false,
-      error: error?.message || 'AI 비서와의 연결 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      error: friendlyMessage,
     });
   }
 }

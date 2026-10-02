@@ -9,6 +9,33 @@ export interface RequestCheerParams {
   customApiKey?: string;
 }
 
+export function formatFriendlyErrorMessage(raw: string): string {
+  if (!raw) return 'AI 비서와의 연결 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  
+  // JSON 문자열 형태인 경우 안쪽 메시지 추출
+  if (raw.includes('"error"') || (raw.startsWith('{') && raw.endsWith('}'))) {
+    try {
+      const parsed = JSON.parse(raw);
+      const innerMsg = parsed?.error?.message || parsed?.message;
+      if (innerMsg) return formatFriendlyErrorMessage(innerMsg);
+    } catch {
+      // JSON 파싱 실패 시 아래 문자열 검사로 진행
+    }
+  }
+
+  if (raw.includes('503') || raw.includes('high demand') || raw.includes('UNAVAILABLE')) {
+    return '현재 구글 AI 서버에 일시적인 접속량이 많습니다. 2~3초 후 [AI 비서에게 일기 보여주기] 버튼을 한 번 더 눌러주세요.';
+  }
+  if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
+    return 'API 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.';
+  }
+  if (raw.includes('API key') || raw.includes('API_KEY')) {
+    return 'Gemini API 키가 설정되지 않았거나 올바르지 않습니다. Vercel 환경 변수를 확인해주세요.';
+  }
+
+  return raw;
+}
+
 export async function requestAICheer(params: RequestCheerParams): Promise<AICheerResponse> {
   const { emotion, content, date, title, structured, customApiKey } = params;
 
@@ -39,25 +66,27 @@ export async function requestAICheer(params: RequestCheerParams): Promise<AIChee
       const errorJson = await res.json().catch(() => null);
       const serverErrMsg = errorJson?.error;
 
-      // If server returned an explicit error (like missing key), bubble it up
       if (serverErrMsg) {
-        throw new Error(serverErrMsg);
+        throw new Error(formatFriendlyErrorMessage(serverErrMsg));
       }
       throw new Error(`서버 요청 실패 (상태 코드: ${res.status})`);
     }
   } catch (err: any) {
-    // If server failed, let's check if client has VITE_GEMINI_API_KEY or custom key as fallback for static Vercel deployment
+    // If server failed, let's check if client has VITE_GEMINI_API_KEY or custom key as fallback
     const fallbackKey = customApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
     if (fallbackKey) {
-      return await generateWithDirectGeminiRest(fallbackKey, params);
+      try {
+        return await generateWithDirectGeminiRest(fallbackKey, params);
+      } catch (restErr: any) {
+        throw new Error(formatFriendlyErrorMessage(restErr?.message || err?.message));
+      }
     }
-    throw err;
+    throw new Error(formatFriendlyErrorMessage(err?.message));
   }
 }
 
 /**
- * Fallback direct Gemini REST call if running in purely static environment (e.g. static Vercel export)
- * Uses standard REST endpoint for gemini-2.5-flash or gemini-2.0-flash / gemini-1.5 / gemini-3.8-flash
+ * Fallback direct Gemini REST call with model chain
  */
 async function generateWithDirectGeminiRest(apiKey: string, params: RequestCheerParams): Promise<AICheerResponse> {
   const { emotion, content, date, title, structured } = params;
@@ -114,30 +143,41 @@ ${bodyText}
 }
 `.trim();
 
-  // Try gemini-2.5-flash or gemini-2.0-flash on Google Generative Language REST
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const candidateModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  let lastErr: any = null;
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
+  for (const model of candidateModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData?.error?.message || `Gemini API 오류 발생 (${res.status})`);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.error?.message || `상태 코드 ${res.status}`);
+      }
+
+      const result = await res.json();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new Error('빈 응답');
+      }
+
+      return JSON.parse(text) as AICheerResponse;
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[REST fallback] Model ${model} failed, trying next...`, err?.message);
+    }
   }
 
-  const result = await res.json();
-  const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini로부터 빈 응답을 받았습니다.');
-  }
-
-  return JSON.parse(text) as AICheerResponse;
+  throw lastErr || new Error('Gemini API 응답을 받아오지 못했습니다.');
 }

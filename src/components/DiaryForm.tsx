@@ -23,6 +23,7 @@ import {
   Flame
 } from 'lucide-react';
 import { playSoftClick } from '../utils/soundEffects';
+import { formatFriendlyErrorMessage } from '../services/geminiService';
 
 interface DiaryFormProps {
   onSubmit: (data: {
@@ -202,7 +203,7 @@ export const DiaryForm: React.FC<DiaryFormProps> = ({ onSubmit, isLoading, sound
         structured: structuredData,
       });
     } catch (err: any) {
-      setErrorMessage(err.message || 'AI 비서와의 연결 중 오류가 발생했습니다.');
+      setErrorMessage(formatFriendlyErrorMessage(err?.message || 'AI 비서와의 연결 중 오류가 발생했습니다.'));
     }
   };
 
@@ -780,9 +781,21 @@ export const DiaryForm: React.FC<DiaryFormProps> = ({ onSubmit, isLoading, sound
 
         {/* Error message alert */}
         {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2">
-            <span className="font-bold">⚠️</span>
-            <span>{errorMessage}</span>
+          <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 text-stone-800 text-sm flex items-start justify-between gap-3 shadow-2xs animate-fadeIn">
+            <div className="flex items-start gap-2.5">
+              <span className="text-lg shrink-0 mt-0.5">💌</span>
+              <div>
+                <strong className="text-amber-900 font-bold block mb-0.5">안내 말씀</strong>
+                <p className="text-stone-700 text-xs sm:text-sm leading-relaxed">{errorMessage}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-stone-400 hover:text-stone-600 text-xs shrink-0 px-2 py-1 rounded-lg hover:bg-amber-100/60"
+            >
+              닫기
+            </button>
           </div>
         )}
 
